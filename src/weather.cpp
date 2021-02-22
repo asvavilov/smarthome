@@ -14,11 +14,6 @@
 
 // TODO см. кириллические шрифты
 
-/*
-esp32 doit devkit 1.0:
-ili9844: подключение VSPI и задать прочие пины по примеру Setup21_ILI9488.h
-*/
-
 #include <Arduino.h>
 #include <SPI.h>
 #include <Wire.h>
