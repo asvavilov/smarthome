@@ -16,6 +16,7 @@
 // TODO см. кириллические шрифты
 
 #include <Arduino.h>
+#include "config.h"
 #include <SPI.h>
 #include <Wire.h>
 
@@ -73,6 +74,11 @@ static void btn_event_cb(lv_obj_t * btn, lv_event_t event)
 		/*Get the first child of the button which is the label and change its text*/
 		lv_obj_t * label = lv_obj_get_child(btn, NULL);
 		lv_label_set_text_fmt(label, "Button: %d", cnt);
+
+		// TODO перенести пищалку в таймер
+		digitalWrite(SPEAKER_PIN, HIGH);
+		delay(180);
+		digitalWrite(SPEAKER_PIN, LOW);
 	}
 }
 void my_demo()
@@ -151,6 +157,9 @@ void connectNet()
 void setup()
 {
 	Serial.begin(115200);
+
+	pinMode(SPEAKER_PIN, OUTPUT);
+	digitalWrite(SPEAKER_PIN, LOW);
 
 	lv_init();
 
