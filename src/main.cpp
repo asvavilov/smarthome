@@ -1,4 +1,5 @@
 // TODO придумать интерфейсы и функционал
+//      темная/светлая тема по времени заката/восхода
 
 // TODO связь с сервером
 //      1) публикация на сервер и вывод с него (mqtt или еще какие подходящие протоколы)
@@ -6,14 +7,14 @@
 
 // TODO погода
 //      вывод графиков
-//      публикация на свой сервер
-//      читать прогноз погоды
+//      публикация на свой сервер (mqtt, websocket, nodejs, strapi, graphql, tarantool) (или thingspeak или другой более подходящий)
+//      читать прогноз погоды (openweathermap или другой более подходящий)
 
 // TODO время RTC или отсчет по таймерам или millis
 //      в любом случае нужно периодически определять точное время (NTP-сервер или со своего)
 // TODO таймер с сигналом
 
-// TODO см. кириллические шрифты
+// TODO шрифты: см. какие еще символы и размеры нужны (информация для пересборки в README)
 
 #include <Arduino.h>
 #include "config.h"
@@ -73,7 +74,7 @@ static void btn_event_cb(lv_obj_t * btn, lv_event_t event)
 
 		/*Get the first child of the button which is the label and change its text*/
 		lv_obj_t * label = lv_obj_get_child(btn, NULL);
-		lv_label_set_text_fmt(label, "Button: %d", cnt);
+		lv_label_set_text_fmt(label, "Ещё топчи %d", cnt);
 
 		// TODO перенести пищалку в таймер
 		digitalWrite(SPEAKER_PIN, HIGH);
@@ -86,16 +87,17 @@ void my_demo()
 
 	/* Create simple label */
 	lv_obj_t *label = lv_label_create(lv_scr_act(), NULL);
-	lv_label_set_text(label, "Hello Arduino!");
+	//lv_obj_set_style_local_text_font(label, LV_LABEL_PART_MAIN, LV_STATE_DEFAULT, &font_montserrat_16);
+	lv_label_set_text(label, "Hello Arduino! Привет мир!");
 	lv_obj_align(label, NULL, LV_ALIGN_CENTER, 0, 0);
 
 	lv_obj_t * btn = lv_btn_create(lv_scr_act(), NULL);     /*Add a button the current screen*/
 	lv_obj_set_pos(btn, 10, 10);                            /*Set its position*/
-	lv_obj_set_size(btn, 120, 50);                          /*Set its size*/
+	lv_obj_set_size(btn, 150, 50);                          /*Set its size*/
 	lv_obj_set_event_cb(btn, btn_event_cb);                 /*Assign a callback to the button*/
 
 	lv_obj_t * label2 = lv_label_create(btn, NULL);          /*Add a label to the button*/
-	lv_label_set_text(label2, "Button");                     /*Set the labels text*/
+	lv_label_set_text(label2, "Топчи на кнопку");                     /*Set the labels text*/
 
 	lv_obj_t * label_temperature = lv_label_create(lv_scr_act(), NULL);
 	lv_label_set_text(label_temperature, "");
