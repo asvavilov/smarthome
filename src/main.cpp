@@ -1,5 +1,5 @@
 // TODO придумать интерфейсы и функционал
-//      темная/светлая тема по времени заката/восхода
+//      темная/светлая тема по времени заката/восхода или по датчику освещенности
 //      шрифты: см. какие еще символы и размеры нужны (информация для пересборки в README)
 
 // TODO связь с сервером
@@ -147,6 +147,17 @@ static void btn_event_cb(lv_obj_t * btn, lv_event_t event)
 		digitalWrite(SPEAKER_PIN, LOW);
 	}
 }
+static void sw_event_handler(lv_obj_t * obj, lv_event_t event)
+{
+	if (event == LV_EVENT_VALUE_CHANGED)
+	{
+		lv_theme_material_init(
+			LV_THEME_DEFAULT_COLOR_PRIMARY, LV_THEME_DEFAULT_COLOR_SECONDARY,
+			lv_switch_get_state(obj) ? LV_THEME_MATERIAL_FLAG_LIGHT : LV_THEME_MATERIAL_FLAG_DARK,
+			&font_montserrat_16, &font_montserrat_16, &font_montserrat_16, &font_montserrat_16
+		);
+	}
+}
 void my_demo()
 {
 
@@ -163,6 +174,12 @@ void my_demo()
 
 	lv_obj_t * label2 = lv_label_create(btn, NULL); // Add a label to the button
 	lv_label_set_text(label2, "Топчи на кнопку"); // Set the labels text
+
+	// Create a switch and apply the styles
+	lv_obj_t *sw1 = lv_switch_create(lv_scr_act(), NULL);
+	lv_obj_set_pos(sw1, 10, 100);
+	lv_obj_set_event_cb(sw1, sw_event_handler);
+	lv_switch_on(sw1, LV_ANIM_ON);
 
 	lv_obj_t * label_temperature = lv_label_create(lv_scr_act(), NULL);
 	lv_label_set_text(label_temperature, "");
