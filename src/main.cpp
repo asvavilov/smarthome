@@ -83,6 +83,34 @@ void checkNetTask(lv_task_t * task)
 	}
 }
 
+bool photosensorOn = true;
+// TODO ? можно еще фон менять в зависимости от уровня освещения
+void lightTask(lv_task_t * task)
+{
+	if (!photosensorOn)
+	{
+		return;
+	}
+	uint16_t photoresistorValue = analogRead(PHOTORESISTOR_PIN);
+	uint32_t themeFlags = lv_theme_get_flags();
+	if (photoresistorValue < LIGHT_START_VALUE && (themeFlags & LV_THEME_MATERIAL_FLAG_LIGHT) > 0)
+	{
+		lv_theme_material_init(
+			LV_THEME_DEFAULT_COLOR_PRIMARY, LV_THEME_DEFAULT_COLOR_SECONDARY,
+			LV_THEME_MATERIAL_FLAG_DARK,
+			&font_montserrat_16, &font_montserrat_16, &font_montserrat_16, &font_montserrat_16
+		);
+	}
+	else if (photoresistorValue > LIGHT_START_VALUE && (themeFlags & LV_THEME_MATERIAL_FLAG_DARK) > 0)
+	{
+		lv_theme_material_init(
+			LV_THEME_DEFAULT_COLOR_PRIMARY, LV_THEME_DEFAULT_COLOR_SECONDARY,
+			LV_THEME_MATERIAL_FLAG_LIGHT,
+			&font_montserrat_16, &font_montserrat_16, &font_montserrat_16, &font_montserrat_16
+		);
+	}
+}
+
 void syncTime()
 {
 	// init and get the time
@@ -151,11 +179,7 @@ static void sw_event_handler(lv_obj_t * obj, lv_event_t event)
 {
 	if (event == LV_EVENT_VALUE_CHANGED)
 	{
-		lv_theme_material_init(
-			LV_THEME_DEFAULT_COLOR_PRIMARY, LV_THEME_DEFAULT_COLOR_SECONDARY,
-			lv_switch_get_state(obj) ? LV_THEME_MATERIAL_FLAG_LIGHT : LV_THEME_MATERIAL_FLAG_DARK,
-			&font_montserrat_16, &font_montserrat_16, &font_montserrat_16, &font_montserrat_16
-		);
+		photosensorOn = lv_switch_get_state(obj);
 	}
 }
 void my_demo()
@@ -200,6 +224,10 @@ void my_demo()
 	// monitoring net
 	lv_task_t * taskNet = lv_task_create(checkNetTask, 30000, LV_TASK_PRIO_MID, nullptr);
 	lv_task_ready(taskNet);
+
+	// light
+	lv_task_t * taskLight = lv_task_create(lightTask, 3000, LV_TASK_PRIO_MID, nullptr);
+	lv_task_ready(taskLight);
 
 	// sync
 	lv_task_t * taskSync = lv_task_create(syncTimeTask, 86400000, LV_TASK_PRIO_MID, nullptr);
