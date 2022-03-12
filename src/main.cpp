@@ -31,8 +31,13 @@
 
 TFT_eSPI tft = TFT_eSPI();
 
-static lv_disp_buf_t disp_buf;
-static lv_color_t buf[LV_HOR_RES_MAX * 10];
+#define DISP_HOR_RES TFT_HEIGHT
+#define DISP_VER_RES TFT_WIDTH
+#define MY_DISP_HOR_RES TFT_HEIGHT
+#define MY_DISP_VER_RES TFT_WIDTH
+static lv_disp_draw_buf_t draw_buf;
+//static lv_color_t buf1[ DISP_HOR_RES * 10 ];
+static lv_color_t buf1[DISP_HOR_RES * DISP_VER_RES / 10];                        /*Declare a buffer for 1/10 screen size*/
 
 #if USE_LV_LOG != 0
 /* Serial debugging */
@@ -74,7 +79,7 @@ void connectNet(uint32_t recon_delay = 500)
 	}
 	Serial.println(" CONNECTED");
 }
-void checkNetTask(lv_task_t * task)
+void checkNetTask(lv_timer_t * task)
 {
 	if (WiFi.status() != WL_CONNECTED)
 	{
@@ -84,30 +89,36 @@ void checkNetTask(lv_task_t * task)
 }
 
 bool photosensorOn = true;
+lv_theme_t * theme;
 // TODO ? можно еще фон менять в зависимости от уровня освещения
-void lightTask(lv_task_t * task)
+void lightTask(lv_timer_t * task)
 {
 	if (!photosensorOn)
 	{
 		return;
 	}
 	uint16_t photoresistorValue = analogRead(PHOTORESISTOR_PIN);
-	uint32_t themeFlags = lv_theme_get_flags();
-	if (photoresistorValue < LIGHT_START_VALUE && (themeFlags & LV_THEME_MATERIAL_FLAG_LIGHT) > 0)
+
+	// TODO отладить зону нечуствительности для исключения дребезга
+	if (photoresistorValue < LIGHT_START_VALUE - LIGHT_OFFSET_VALUE && (!theme || (theme->flags & 1) == 0))
 	{
-		lv_theme_material_init(
-			LV_THEME_DEFAULT_COLOR_PRIMARY, LV_THEME_DEFAULT_COLOR_SECONDARY,
-			LV_THEME_MATERIAL_FLAG_DARK,
-			&font_montserrat_16, &font_montserrat_16, &font_montserrat_16, &font_montserrat_16
+		theme = lv_theme_default_init(
+			NULL,  // Use the DPI, size, etc from this display
+			lv_palette_main(LV_PALETTE_GREEN), lv_palette_main(LV_PALETTE_LIGHT_GREEN),   // Primary and secondary palette
+			true,    // Light or dark mode
+			&font_montserrat_16 // Small, normal, large fonts
 		);
+		lv_disp_set_theme(NULL, theme); // Assign the theme to the display
 	}
-	else if (photoresistorValue > LIGHT_START_VALUE && (themeFlags & LV_THEME_MATERIAL_FLAG_DARK) > 0)
+	else if (photoresistorValue > LIGHT_START_VALUE + LIGHT_OFFSET_VALUE && (!theme || (theme->flags & 1) == 1))
 	{
-		lv_theme_material_init(
-			LV_THEME_DEFAULT_COLOR_PRIMARY, LV_THEME_DEFAULT_COLOR_SECONDARY,
-			LV_THEME_MATERIAL_FLAG_LIGHT,
-			&font_montserrat_16, &font_montserrat_16, &font_montserrat_16, &font_montserrat_16
+		theme = lv_theme_default_init(
+			NULL,  // Use the DPI, size, etc from this display
+			lv_palette_main(LV_PALETTE_GREEN), lv_palette_main(LV_PALETTE_LIGHT_GREEN),   //Primary and secondary palette
+			false,    // Light or dark mode
+			&font_montserrat_16 // Small, normal, large fonts
 		);
+		lv_disp_set_theme(NULL, theme); // Assign the theme to the display
 	}
 }
 
@@ -116,7 +127,7 @@ void syncTime()
 	// init and get the time
 	configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 }
-void syncTimeTask(lv_task_t * task)
+void syncTimeTask(lv_timer_t * task)
 {
 	syncTime();
 }
@@ -131,11 +142,10 @@ tm readTime()
 		while (1);
 	}
 	Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
-	Serial.println("Time synchronization succeeded");
 
 	return timeinfo;
 }
-void printTimeTask(lv_task_t * task)
+void printTimeTask(lv_timer_t * task)
 {
 	TimeData * time_data = (TimeData *)(task->user_data);
 	tm timeinfo = readTime();
@@ -143,7 +153,7 @@ void printTimeTask(lv_task_t * task)
 	lv_label_set_text_fmt(time_data->label_time, "%02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
 }
 
-void printWeatherTask(lv_task_t * task)
+void printWeatherTask(lv_timer_t * task)
 {
 	WeatherData * user_data = (WeatherData *)(task->user_data);
 
@@ -158,15 +168,17 @@ void printWeatherTask(lv_task_t * task)
 	lv_label_set_text_fmt(user_data->label_pressure, "Pressure: %f mmHg", p);
 }
 
-static void btn_event_cb(lv_obj_t * btn, lv_event_t event)
+static void btn_event_cb(lv_event_t * e)
 {
-	if (event == LV_EVENT_CLICKED)
+	lv_event_code_t code = lv_event_get_code(e);
+	if (code == LV_EVENT_CLICKED)
 	{
 		static uint8_t cnt = 0;
 		cnt++;
 
 		// Get the first child of the button which is the label and change its text
-		lv_obj_t * label = lv_obj_get_child(btn, NULL);
+    lv_obj_t * btn = lv_event_get_target(e);
+    lv_obj_t * label = lv_obj_get_child(btn, 0);
 		lv_label_set_text_fmt(label, "Ещё топчи %d", cnt);
 
 		// TODO перенести пищалку в таймер
@@ -175,71 +187,73 @@ static void btn_event_cb(lv_obj_t * btn, lv_event_t event)
 		digitalWrite(SPEAKER_PIN, LOW);
 	}
 }
-static void sw_event_handler(lv_obj_t * obj, lv_event_t event)
+static void sw_event_handler(lv_event_t * e)
 {
-	if (event == LV_EVENT_VALUE_CHANGED)
+	lv_event_code_t code = lv_event_get_code(e);
+	if (code == LV_EVENT_VALUE_CHANGED)
 	{
-		photosensorOn = lv_switch_get_state(obj);
+    lv_obj_t * obj = lv_event_get_target(e);
+		photosensorOn = lv_obj_has_state(obj, LV_STATE_CHECKED);
 	}
 }
 void my_demo()
 {
 
 	// Create simple label
-	lv_obj_t * label = lv_label_create(lv_scr_act(), NULL);
+	lv_obj_t * label = lv_label_create(lv_scr_act());
 	//lv_obj_set_style_local_text_font(label, LV_LABEL_PART_MAIN, LV_STATE_DEFAULT, &font_montserrat_16);
 	lv_label_set_text(label, "Hello Arduino! Привет мир!");
-	lv_obj_align(label, NULL, LV_ALIGN_CENTER, 0, 0);
+	lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
 
-	lv_obj_t * btn = lv_btn_create(lv_scr_act(), NULL); // Add a button the current screen
+	lv_obj_t * btn = lv_btn_create(lv_scr_act()); // Add a button the current screen
 	lv_obj_set_pos(btn, 10, 10); // Set its position
 	lv_obj_set_size(btn, 150, 50); // Set its size
-	lv_obj_set_event_cb(btn, btn_event_cb); // Assign a callback to the button
+	lv_obj_add_event_cb(btn, btn_event_cb, LV_EVENT_CLICKED, nullptr); // Assign a callback to the button
 
-	lv_obj_t * label2 = lv_label_create(btn, NULL); // Add a label to the button
+	lv_obj_t * label2 = lv_label_create(btn); // Add a label to the button
 	lv_label_set_text(label2, "Топчи на кнопку"); // Set the labels text
 
 	// Create a switch and apply the styles
-	lv_obj_t *sw1 = lv_switch_create(lv_scr_act(), NULL);
+	lv_obj_t *sw1 = lv_switch_create(lv_scr_act());
 	lv_obj_set_pos(sw1, 10, 100);
-	lv_obj_set_event_cb(sw1, sw_event_handler);
-	lv_switch_on(sw1, LV_ANIM_ON);
+	lv_obj_add_event_cb(sw1, sw_event_handler, LV_EVENT_VALUE_CHANGED, nullptr);
+	lv_obj_add_state(sw1, LV_STATE_CHECKED);
 
-	lv_obj_t * label_temperature = lv_label_create(lv_scr_act(), NULL);
+	lv_obj_t * label_temperature = lv_label_create(lv_scr_act());
 	lv_label_set_text(label_temperature, "");
-	lv_obj_align(label_temperature, NULL, LV_ALIGN_CENTER, 0, 20);
-	lv_obj_t * label_humidity = lv_label_create(lv_scr_act(), NULL);
+	lv_obj_align(label_temperature, LV_ALIGN_CENTER, 0, 20);
+	lv_obj_t * label_humidity = lv_label_create(lv_scr_act());
 	lv_label_set_text(label_humidity, "");
-	lv_obj_align(label_humidity, NULL, LV_ALIGN_CENTER, 0, 35);
-	lv_obj_t * label_pressure = lv_label_create(lv_scr_act(), NULL);
+	lv_obj_align(label_humidity, LV_ALIGN_CENTER, 0, 35);
+	lv_obj_t * label_pressure = lv_label_create(lv_scr_act());
 	lv_label_set_text(label_pressure, "");
-	lv_obj_align(label_pressure, NULL, LV_ALIGN_CENTER, 0, 50);
+	lv_obj_align(label_pressure, LV_ALIGN_CENTER, 0, 50);
 	WeatherData * user_data = new WeatherData();
 	user_data->label_temperature = label_temperature;
 	user_data->label_humidity = label_humidity;
 	user_data->label_pressure = label_pressure;
-	lv_task_t * taskWeather = lv_task_create(printWeatherTask, 60000, LV_TASK_PRIO_MID, user_data);
-	lv_task_ready(taskWeather);
+	lv_timer_t * taskWeather = lv_timer_create(printWeatherTask, 60000, user_data);
+	lv_timer_ready(taskWeather);
 
 	// monitoring net
-	lv_task_t * taskNet = lv_task_create(checkNetTask, 30000, LV_TASK_PRIO_MID, nullptr);
-	lv_task_ready(taskNet);
+	lv_timer_t * taskNet = lv_timer_create(checkNetTask, 30000, nullptr);
+	lv_timer_ready(taskNet);
 
 	// light
-	lv_task_t * taskLight = lv_task_create(lightTask, 3000, LV_TASK_PRIO_MID, nullptr);
-	lv_task_ready(taskLight);
+	lv_timer_t * taskLight = lv_timer_create(lightTask, 3000, nullptr);
+	lv_timer_ready(taskLight);
 
 	// sync
-	lv_task_t * taskSync = lv_task_create(syncTimeTask, 86400000, LV_TASK_PRIO_MID, nullptr);
-	lv_task_ready(taskSync);
+	lv_timer_t * taskSync = lv_timer_create(syncTimeTask, 86400000, nullptr);
+	lv_timer_ready(taskSync);
 	// time
-	lv_obj_t * label_time = lv_label_create(lv_scr_act(), NULL);
+	lv_obj_t * label_time = lv_label_create(lv_scr_act());
 	lv_label_set_text(label_time, "");
-	lv_obj_align(label_time, NULL, LV_ALIGN_CENTER, 0, 80);
+	lv_obj_align(label_time, LV_ALIGN_CENTER, 0, 80);
 	TimeData * time_data = new TimeData();
 	time_data->label_time = label_time;
-	lv_task_t * taskTime = lv_task_create(printTimeTask, 1000, LV_TASK_PRIO_MID, time_data);
-	lv_task_ready(taskTime);
+	lv_timer_t * taskTime = lv_timer_create(printTimeTask, 1000, time_data);
+	lv_timer_ready(taskTime);
 }
 
 /* Display flushing */
@@ -257,23 +271,21 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 }
 
 /* Read the touchpad */
-bool my_touchpad_read(lv_indev_drv_t * indev_driver, lv_indev_data_t * data)
+void my_touchpad_read(lv_indev_drv_t * indev, lv_indev_data_t * data)
 {
 	uint16_t touchX, touchY;
 
 	bool touched = tft.getTouch(&touchX, &touchY, 600);
 
 	if(!touched) {
-		data->state = LV_INDEV_STATE_REL;
+	  data->state = LV_INDEV_STATE_RELEASED;
 	} else {
-		data->state = LV_INDEV_STATE_PR;
+	  data->state = LV_INDEV_STATE_PRESSED;
 
-		// Set the coordinates
-		data->point.x = touchX;
-		data->point.y = touchY;
+	  // Set the coordinates
+	  data->point.x = touchX;
+	  data->point.y = touchY;
 	}
-
-	return false; // Return `false` because we are not buffering and no more data to read
 }
 
 void setup()
@@ -295,23 +307,24 @@ void setup()
 	uint16_t calData[5] = { 159, 3738, 272, 3562, 7 };
 	tft.setTouch(calData);
 
-	lv_disp_buf_init(&disp_buf, buf, NULL, LV_HOR_RES_MAX * 10);
+	// Create a draw buffer: LVGL will render the graphics here first, and send the rendered image to the display. The buffer size can be set freely but 1/10 screen size is a good starting point.
+	lv_disp_draw_buf_init(&draw_buf, buf1, NULL, MY_DISP_HOR_RES * MY_DISP_VER_RES / 10);  /*Initialize the display buffer.*/
 
-	// Initialize the display
-	lv_disp_drv_t disp_drv;
-	lv_disp_drv_init(&disp_drv);
-	disp_drv.hor_res = TFT_HEIGHT;
-	disp_drv.ver_res = TFT_WIDTH;
-	disp_drv.flush_cb = my_disp_flush;
-	disp_drv.buffer = &disp_buf;
-	lv_disp_drv_register(&disp_drv);
+	// Implement and register a function which can copy the rendered image to an area of your display:
+	static lv_disp_drv_t disp_drv;        /*Descriptor of a display driver*/
+	lv_disp_drv_init(&disp_drv);          /*Basic initialization*/
+	disp_drv.flush_cb = my_disp_flush;    /*Set your driver function*/
+	disp_drv.draw_buf = &draw_buf;        /*Assign the buffer to the display*/
+	disp_drv.hor_res = MY_DISP_HOR_RES;   /*Set the horizontal resolution of the display*/
+	disp_drv.ver_res = MY_DISP_VER_RES;   /*Set the vertical resolution of the display*/
+	lv_disp_drv_register(&disp_drv);      /*Finally register the driver*/
 
-	// Initialize the (dummy) input device driver
-	lv_indev_drv_t indev_drv;
-	lv_indev_drv_init(&indev_drv);
-	indev_drv.type = LV_INDEV_TYPE_POINTER;
-	indev_drv.read_cb = my_touchpad_read;
-	lv_indev_drv_register(&indev_drv);
+	// Implement and register a function which can read an input device. E.g. for a touchpad:
+	static lv_indev_drv_t indev_drv;           /*Descriptor of a input device driver*/
+	lv_indev_drv_init(&indev_drv);             /*Basic initialization*/
+	indev_drv.type = LV_INDEV_TYPE_POINTER;    /*Touch pad is a pointer-like device*/
+	indev_drv.read_cb = my_touchpad_read;      /*Set your driver function*/
+	lv_indev_drv_register(&indev_drv);         /*Finally register the driver*/
 
 	connectNet();
 
